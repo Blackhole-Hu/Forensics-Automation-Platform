@@ -1,11 +1,12 @@
 """
 证据管理路由
 """
+import json
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 @router.post("/upload", response_model=EvidenceResponse)
 async def upload_evidence(
     file: UploadFile = File(...),
-    description: Optional[str] = None,
+    description: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """上传证据文件"""
@@ -62,7 +63,7 @@ async def upload_evidence(
         evidence_id=evidence.id,
         event_type="upload",
         description=f"上传文件: {file.filename} ({file_size} bytes)",
-        details={"original_name": file.filename, "file_size": file_size}
+        details=json.dumps({"original_name": file.filename, "file_size": file_size}, ensure_ascii=False)
     )
     db.add(chain)
     await db.commit()

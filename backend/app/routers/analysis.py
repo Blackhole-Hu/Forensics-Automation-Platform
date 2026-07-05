@@ -1,9 +1,10 @@
 """
 分析任务路由
 """
+import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,13 +18,21 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 @router.post("/run", response_model=AnalysisTaskResponse)
 async def run_analysis(
-    evidence_id: int,
-    tool: str,
-    params: Optional[dict] = None,
+    evidence_id: int = Form(...),
+    tool: str = Form(...),
+    params: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db)
 ):
     """启动分析任务"""
+    # 解析 params JSON
+    parsed_params = {}
+    if params:
+        try:
+            parsed_params = json.loads(params)
+        except json.JSONDecodeError:
+            parsed_params = {}
+
     # 验证证据存在
     evidence = await db.get(Evidence, evidence_id)
     if not evidence:
@@ -38,7 +47,7 @@ async def run_analysis(
         evidence_id=evidence_id,
         tool=tool,
         status="pending",
-        command=str(params),
+        command=params,
         progress=0.0
     )
     db.add(task)
@@ -50,7 +59,7 @@ async def run_analysis(
         evidence_id=evidence_id,
         event_type="analyze_start",
         description=f"开始分析: {tool}",
-        details={"tool": tool, "task_id": task.id, "params": params}
+        details=json.dumps({"tool": tool, "task_id": task.id, "params": parsed_params}, ensure_ascii=False)
     )
     db.add(chain)
     await db.commit()
@@ -62,7 +71,7 @@ async def run_analysis(
             task.id,
             tool,
             evidence.file_path,
-            params
+            parsed_params
         )
 
     return task
@@ -155,7 +164,7 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
                         evidence_id=task.evidence_id,
                         event_type="finding",
                         description=f"发现: {finding.get('type', 'unknown')} - {finding.get('title', '')}",
-                        details=str(finding)
+                        details=json.dumps(finding, ensure_ascii=False, default=str)
                     )
                     db.add(chain)
 

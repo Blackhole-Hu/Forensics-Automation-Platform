@@ -294,10 +294,22 @@ async def autogkat_analysis(file_path: str, params: dict, progress_callback=None
     except Exception:
         pass
 
+    # 构建标准化的 findings 列表（供数据库存储）
+    db_findings = []
+    for item in findings[:100]:
+        keyword = item.get("keyword", "keyword")
+        db_findings.append({
+            "type": keyword,
+            "severity": "info",
+            "title": f"关键词匹配: {keyword}",
+            "content": item.get("content", "")
+        })
+
     return {
         "status": "completed",
         "output": json.dumps(findings[:50], ensure_ascii=False),
-        "findings_count": len(findings)
+        "findings_count": len(findings),
+        "findings": db_findings
     }
 
 

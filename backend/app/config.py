@@ -4,6 +4,9 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
+# 基于代码位置的绝对路径
+_BASE_DIR = Path(__file__).parent.parent
+
 
 class Settings(BaseSettings):
     # 应用配置
@@ -11,15 +14,15 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # 文件存储
-    upload_dir: Path = Path(__file__).parent.parent / "uploads"
-    results_dir: Path = Path(__file__).parent.parent / "results"
+    upload_dir: Path = _BASE_DIR / "uploads"
+    results_dir: Path = _BASE_DIR / "results"
     max_upload_size: int = 500 * 1024 * 1024  # 500MB
 
     # 工具路径
     tools_dir: str = r"E:\CompetitionTools\tools"
 
-    # 数据库
-    database_url: str = "sqlite+aiosqlite:///./forensic.db"
+    # 数据库（绝对路径，避免工作目录变化导致找不到）
+    database_url: str = f"sqlite+aiosqlite:///{_BASE_DIR / 'forensic.db'}"
 
     # AI 配置
     ai_api_key: str = ""

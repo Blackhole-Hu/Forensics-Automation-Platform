@@ -34,3 +34,10 @@ backend/results/*
 
 # Logs
 *.log
+
+# Test files
+test_api.py
+test_config.txt
+
+# Database
+backend/forensic.db
