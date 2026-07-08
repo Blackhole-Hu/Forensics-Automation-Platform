@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import evidence, analysis, websocket
+from app.routers import evidence, analysis, websocket, report
 
 
 app = FastAPI(
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(evidence.router)
 app.include_router(analysis.router)
 app.include_router(websocket.router)
+app.include_router(report.router)
 
 
 # 静态文件服务

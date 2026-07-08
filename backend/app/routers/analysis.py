@@ -2,6 +2,7 @@
 分析任务路由
 """
 import json
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form
@@ -12,6 +13,7 @@ from app.database import get_db
 from app.models import Evidence, AnalysisTask, Finding, EvidenceChain, EvidenceStatus
 from app.schemas import AnalysisTaskResponse
 from app.services.analysis_engine import AnalysisEngine
+from app.routers.websocket import manager
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -121,20 +123,39 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
             task.status = "running"
             task.progress = 10.0
             await db.commit()
+            
+            # 广播进度
+            await manager.broadcast(task.evidence_id, {
+                "type": "progress",
+                "task_id": task_id,
+                "progress": 10.0,
+                "message": f"开始 {tool} 分析..."
+            })
+
+            # 创建进度回调函数
+            async def progress_callback(progress: float, message: str = ""):
+                task = await db.get(AnalysisTask, task_id)
+                if task:
+                    task.progress = progress
+                    await db.commit()
+                    # WebSocket 广播
+                    await manager.broadcast(task.evidence_id, {
+                        "type": "progress",
+                        "task_id": task_id,
+                        "progress": progress,
+                        "message": message
+                    })
 
             # 执行分析
-            def progress_cb(progress: float, message: str = ""):
-                # 简单进度回调
-                pass
-
             result = await AnalysisEngine.execute(
                 tool,
                 file_path,
                 params,
-                progress_cb
+                progress_callback
             )
 
             # 更新任务结果
+            task = await db.get(AnalysisTask, task_id)
             task.status = result.get("status", "error")
             task.progress = 100.0
             task.output = result.get("output", "")
@@ -143,6 +164,14 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
                 task.error_message = result["error"]
 
             await db.commit()
+            
+            # 广播完成
+            await manager.broadcast(task.evidence_id, {
+                "type": "task_complete",
+                "task_id": task_id,
+                "status": task.status,
+                "message": f"{tool} 分析完成"
+            })
 
             # 处理发现
             findings = result.get("findings", [])
@@ -167,6 +196,18 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
                         details=json.dumps(finding, ensure_ascii=False, default=str)
                     )
                     db.add(chain)
+                    
+                    # 广播发现
+                    await manager.broadcast(task.evidence_id, {
+                        "type": "finding",
+                        "task_id": task_id,
+                        "finding": {
+                            "type": finding.get("type", "unknown"),
+                            "severity": finding.get("severity", "info"),
+                            "title": finding.get("title", ""),
+                            "content": finding.get("content", "")[:200]
+                        }
+                    })
 
                 await db.commit()
 
@@ -182,6 +223,13 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
                 )
                 if not active_tasks.scalars().all():
                     evidence.status = EvidenceStatus.COMPLETED
+                    
+                    # 广播证据分析完成
+                    await manager.broadcast(task.evidence_id, {
+                        "type": "evidence_complete",
+                        "evidence_id": task.evidence_id,
+                        "message": "所有分析任务已完成"
+                    })
 
                 await db.commit()
 
@@ -191,6 +239,12 @@ async def _execute_analysis(task_id: int, tool: str, file_path: str, params: dic
                 task.status = "error"
                 task.error_message = str(e)
                 await db.commit()
+                
+                await manager.broadcast(task.evidence_id, {
+                    "type": "error",
+                    "task_id": task_id,
+                    "message": f"分析失败: {str(e)}"
+                })
 
             evidence = await db.get(Evidence, task.evidence_id) if task else None
             if evidence:
